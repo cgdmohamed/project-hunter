@@ -24,6 +24,10 @@ describe('scan lock / overlap prevention', () => {
 
     expect(lock.acquire('a', 60_000)).toBe(true);
     expect(lock.acquire('b', 60_000)).toBe(false); // held
+    // A non-owner must not release a lock held by another worker.
+    lock.release('b');
+    expect(lock.current()?.owner).toBe('a');
+    expect(lock.acquire('b', 60_000)).toBe(false);
     lock.release('a');
     expect(lock.acquire('c', 60_000)).toBe(true);
 
@@ -36,6 +40,7 @@ describe('scan lock / overlap prevention', () => {
     });
     expect(lock.recoverExpired()).toBe(true);
     expect(lock.acquire('d', 60_000)).toBe(true);
+    expect(lock.current()?.owner).toBe('d');
   });
 
   it('prevents concurrent scan executions', async () => {
