@@ -4,9 +4,14 @@ import type { ProjectSource, SourceAccessStatus, SourceScanContext } from '../pr
 import type { ParsedProjectDetail } from '../mostaql/detail.parser.js';
 import { createHash } from 'node:crypto';
 import { cleanText } from '../../utils/text.js';
+import * as cheerio from 'cheerio';
 
 type Item = { id?: unknown; url?: unknown; title?: unknown; summary?: unknown; content_text?: unknown; content_html?: unknown; description_text?: unknown; date_published?: unknown; date_modified?: unknown };
 const asString = (v: unknown): string | null => typeof v === 'string' && v.trim() ? v.trim() : null;
+const plainText = (v: unknown): string | null => {
+  const source = asString(v);
+  return source ? cleanText(cheerio.load(source).text()) : null;
+};
 
 /** Reads RSS.app's published JSON Feed, without querying Mostaql. */
 export class RssAppSource implements ProjectSource {
@@ -32,20 +37,38 @@ export class RssAppSource implements ProjectSource {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 15000);
     try {
-      const response = await fetch(feed, { signal: controller.signal, headers: { accept: 'application/feed+json, application/json' } });
+      const response = await fetch(feed, { signal: controller.signal, headers: { accept: 'application/rss+xml, application/xml, application/feed+json, application/json' } });
       if (!response.ok) throw new Error(`RSS.app returned HTTP ${response.status}`);
-      const payload = await response.json() as { items?: unknown };
-      if (!Array.isArray(payload.items)) throw new Error('RSS.app JSON feed has no items array');
+      const body = await response.text();
+      let feedItems: Item[];
+      if (body.trimStart().startsWith('<')) {
+        const $ = cheerio.load(body, { xmlMode: true });
+        if ($('channel').length === 0) throw new Error('Invalid RSS XML feed: missing channel');
+        feedItems = $('channel > item').toArray().map(node => {
+          const el = $(node);
+          return {
+            id: el.find('guid').first().text(),
+            url: el.find('link').first().text(),
+            title: el.find('title').first().text(),
+            content_html: el.find('description').first().text(),
+            date_published: el.find('pubDate').first().text(),
+          };
+        });
+      } else {
+        const payload = JSON.parse(body) as { items?: unknown };
+        if (!Array.isArray(payload.items)) throw new Error('RSS.app JSON feed has no items array');
+        feedItems = payload.items.filter((item): item is Item => Boolean(item && typeof item === 'object'));
+      }
       this.items.clear();
       const found: DiscoveredProject[] = [];
-      for (const raw of payload.items) {
+      for (const raw of feedItems) {
         if (!raw || typeof raw !== 'object') continue;
         const item = raw as Item;
         const canonicalUrl = this.projectUrl(item);
         if (!canonicalUrl) continue;
         const externalId = canonicalUrl;
         const title = asString(item.title);
-        const description = asString(item.description_text) ?? asString(item.content_text) ?? asString(item.summary);
+        const description = plainText(item.description_text) ?? plainText(item.content_text) ?? plainText(item.content_html) ?? plainText(item.summary);
         this.items.set(externalId, item);
         found.push({
           externalId,
@@ -61,9 +84,11 @@ export class RssAppSource implements ProjectSource {
   async fetchProjectDetail(canonicalUrl: string): Promise<ParsedProjectDetail> {
     const item = this.items.get(canonicalUrl);
     if (!item) throw new Error('Project detail not present in the latest RSS feed; no direct-site fallback');
-    const description = asString(item.description_text) ?? asString(item.content_text) ?? asString(item.summary);
+    const description = plainText(item.description_text) ?? plainText(item.content_text) ?? plainText(item.content_html) ?? plainText(item.summary);
     const title = asString(item.title);
-    const publishedAt = asString(item.date_published);
+    const rawDate = asString(item.date_published);
+    const parsedTime = rawDate ? Date.parse(rawDate) : NaN;
+    const publishedAt = Number.isFinite(parsedTime) ? new Date(parsedTime).toISOString() : null;
     // Do not infer budgets from arbitrary descriptions: unknown remains needs_review.
     return {
       title, description, category: null, skills: null, budgetRaw: null,
