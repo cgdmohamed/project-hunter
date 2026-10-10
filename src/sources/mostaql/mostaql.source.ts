@@ -153,7 +153,7 @@ export function robotsAllowProjects(raw: string, path = '/projects', userAgent =
   let permitted = true;
   for (const group of selected) {
     for (const rule of group.rules) {
-      const escaped = rule.pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\\\*/g, '.*');
+      const escaped = rule.pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
       const regex = new RegExp('^' + escaped.replace(/\\\$$/, '$'));
       if (!regex.test(path)) continue;
       const length = rule.pattern.replace(/[\*$]/g, '').length;
