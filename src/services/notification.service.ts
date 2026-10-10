@@ -190,6 +190,50 @@ export class NotificationService {
     return paginateBlocks(blocks);
   }
 
+  /** Review notification only: budget is unknown; never imply the $100 floor was met. */
+  async sendBudgetReview(project: ProjectRow, analysis: AnalysisRow): Promise<boolean> {
+    const dedupKey = `budget-review:${project.id}:${analysis.contentHash ?? project.contentHash}`;
+    if (this.findByDedupKey(dedupKey)?.status === 'sent') return false;
+    if (!this.sender.enabled) return false;
+    const view = EvaluationService.toView(analysis);
+    const body = [
+      '<b>مشروع مناسب تقنيًا — الميزانية تحتاج مراجعة</b>',
+      `<b>${escapeHtml(project.title ?? 'مشروع بدون عنوان')}</b>`,
+      `<a href="${escapeHtml(project.canonicalUrl)}">فتح المشروع والتحقق من الميزانية</a>`,
+      `<b>التوافق:</b> ${view.score}/100`,
+      '<b>الميزانية:</b> غير متوفرة في RSS، لم يتم التحقق من الحد الأدنى 100 دولار',
+      `<b>ملخص:</b> ${escapeHtml(view.businessProblem || view.summary)}`,
+      `<b>الملاءمة:</b> ${escapeHtml(view.suitabilityReasons[0] ?? view.technicalSuitability)}`,
+      '<i>تنبيه مراجعة فقط؛ لم يتم توليد أو إرسال عرض تلقائي.</i>',
+    ].join('\\n');
+    try {
+      const sent = await this.sender.sendMessage(body, { disablePreview: true });
+      const existing = this.findByDedupKey(dedupKey);
+      if (existing) {
+        this.db.update(notifications).set({
+          status: 'sent', telegramMessageId: sent.messageId, sentAt: nowIso(),
+          lastError: null, updatedAt: nowIso(),
+        }).where(eq(notifications.id, existing.id)).run();
+      } else {
+        this.insertNotification({
+          projectId: project.id, notificationType: 'alert', dedupKey,
+          status: 'sent', telegramMessageId: sent.messageId, sentAt: nowIso(),
+        });
+      }
+      this.metrics.notificationsSent += 1;
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error({ projectId: project.id, error: message }, 'budget-review alert failed');
+      this.metrics.notificationFailures += 1;
+      if (!this.findByDedupKey(dedupKey)) {
+        this.insertNotification({ projectId: project.id, notificationType: 'alert',
+          dedupKey, status: 'failed', lastError: message });
+      }
+      return false;
+    }
+  }
+
   // ---------------------------------------------------------------------
   // Technical alerts
   // ---------------------------------------------------------------------
