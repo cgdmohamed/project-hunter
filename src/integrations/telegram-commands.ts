@@ -10,9 +10,10 @@ const OFFSET_KEY = 'telegram_poll_offset';
 type Update = { update_id: number; message?: { text?: string; chat?: { id?: number | string } } };
 type UpdatesResponse = { ok: boolean; result?: Update[]; description?: string };
 
-export function parseTelegramCommand(text: string): 'scan' | 'status' | 'help' | null {
+export function parseTelegramCommand(text: string): 'scan' | 'status' | 'help' | 'resend' | null {
   const command = text.trim().split(/\s+/)[0]?.toLowerCase().split('@')[0];
   if (command === 'مشاريع' || command === '/scan' || command === '/projects') return 'scan';
+  if (command === 'ترشيحات' || command === '/resend' || command === '/suggestions') return 'resend';
   if (command === 'الحالة' || command === '/status' || command === 'إحصائيات' || command === '/stats') return 'status';
   if (command === 'مساعدة' || command === '/help' || command === '/start') return 'help';
   return null;
@@ -75,7 +76,12 @@ export class TelegramCommandPoller {
           const command = parseTelegramCommand(update.message?.text ?? '');
           if (!command) continue;
           if (command === 'help') {
-            await this.sender.sendMessage('الأوامر: مشاريع /scan — فحص يدوي | الحالة /status — حالة النظام | مساعدة /help');
+            await this.sender.sendMessage('الأوامر: مشاريع /scan — فحص يدوي | الحالة /status — حالة النظام | مساعدة /help | ترشيحات /resend — إعادة إرسال آخر 10 مشاريع محفوظة');
+          } else if (command === 'resend') {
+            await this.sender.sendMessage('جاري إعادة إرسال آخر 10 مشاريع محفوظة دون فحص RSS أو تشغيل AI...');
+            void this.scan.resendSuggestions(10).then(async result => {
+              await this.sender.sendMessage(escapeHtml(`انتهت إعادة الإرسال: ${result.sent} مشروع | أخطاء: ${result.failed} | إجمالي المتاح: ${result.available}`));
+            }).catch(error => this.logger.error({ error: String(error) }, 'resend failed'));
           } else if (command === 'status') {
             const lock = this.settings.get('scan_lock');
             const blocked = !this.config.RSS_FEED_URL && this.settings.get('scraper_blocked');
