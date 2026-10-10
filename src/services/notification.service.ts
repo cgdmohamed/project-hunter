@@ -69,7 +69,31 @@ export class NotificationService {
     let row: NotificationRow;
 
     try {
-      const result = await this.sender.sendMessages(messages);
+      // Persist progress after each successful part. Retrying only sends missing parts.
+      // Telegram cannot guarantee exactly-once when its response is lost.
+      let firstId = existing?.telegramMessageId ?? 0;
+      for (let i = 0; i < messages.length; i += 1) {
+        const partKey = `${dedupKey}:part:${i}`;
+        const completed = this.db.select().from(notifications).where(eq(notifications.dedupKey, partKey)).get();
+        if (completed?.status === 'sent') continue;
+        const result = await this.sender.sendMessage(messages[i]!);
+        if (!firstId) firstId = result.messageId;
+        this.db.insert(notifications).values({
+          projectId: project.id,
+          notificationType: 'opportunity_part',
+          dedupKey: partKey,
+          status: 'sent',
+          attempts: 1,
+          telegramMessageId: result.messageId,
+          sentAt: nowIso(),
+          createdAt: nowIso(),
+          updatedAt: nowIso(),
+        }).onConflictDoUpdate({
+          target: notifications.dedupKey,
+          set: { status: 'sent', telegramMessageId: result.messageId, sentAt: nowIso(), updatedAt: nowIso() },
+        }).run();
+      }
+      const result = { messageId: firstId };
       this.metrics.notificationsSent += 1;
       row = this.upsertNotification({
         projectId: project.id,
