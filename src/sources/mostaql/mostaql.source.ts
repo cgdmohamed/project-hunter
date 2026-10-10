@@ -45,7 +45,7 @@ export class MostaqlSource implements ProjectSource {
     const robotsRaw = await this.fetchRobotsTxt();
     let robotsAllowsListing: boolean | null = null;
     if (robotsRaw !== null) {
-      robotsAllowsListing = robotsAllowProjects(robotsRaw);
+      robotsAllowsListing = robotsAllowProjects(robotsRaw, '/projects', this.config.MOSTAQL_USER_AGENT);
       notes.push(
         robotsAllowsListing
           ? 'robots.txt allows listing access'
@@ -58,6 +58,7 @@ export class MostaqlSource implements ProjectSource {
     let reachable = false;
     let status: number | null = null;
     try {
+      if (robotsAllowsListing !== true) throw new Error('Skipping listing probe: robots permission not established');
       const listing = await this.http.fetchHtml(`${this.baseUrl}/projects`);
       status = listing.status;
       reachable = true;
