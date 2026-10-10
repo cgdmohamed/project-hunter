@@ -8,7 +8,7 @@ export interface FetchResult {
   url: string;
 }
 
-export type BlockReason = 'http403' | 'captcha' | 'robots' | 'http404';
+export type BlockReason = 'http403' | 'http429' | 'captcha' | 'robots' | 'http404';
 
 export class BlockedAccessError extends Error {
   reason: BlockReason;
@@ -112,15 +112,16 @@ export class HttpFetcher {
     if (response.status === 404) {
       throw new BlockedAccessError('http404', 404, `HTTP 404 from ${url}`);
     }
-    if (response.status === 429 || response.status >= 500) {
-      const message = `HTTP ${response.status} from ${url}`;
-      if (response.status === 429) {
-        // Transient for our purposes: retried with backoff, never unlimited.
-        const error = new Error(message);
-        (error as Error & { status?: number }).status = response.status;
-        throw error;
-      }
-      const error = new Error(message);
+    if (response.status === 429) {
+      const retryAfter = response.headers.get('retry-after');
+      throw new BlockedAccessError(
+        'http429',
+        429,
+        `HTTP 429 Too Many Requests from ${url}; Retry-After: ${retryAfter ?? 'unspecified'}. Scraper suspended pending review.`,
+      );
+    }
+    if (response.status >= 500) {
+      const error = new Error(`HTTP ${response.status} from ${url}`);
       (error as Error & { status?: number }).status = response.status;
       throw error;
     }
