@@ -191,9 +191,9 @@ export class NotificationService {
   }
 
   /** RSS discovery assistant: reports projects for human judgment, no score-based rejection. */
-  async sendProjectSuggestion(project: ProjectRow, analysis: AnalysisRow): Promise<boolean> {
+  async sendProjectSuggestion(project: ProjectRow, analysis: AnalysisRow, resend = false): Promise<boolean> {
     const dedupKey = `suggestion:${project.id}:${analysis.contentHash ?? project.contentHash}`;
-    if (this.findByDedupKey(dedupKey)?.status === 'sent') return false;
+    if (!resend && this.findByDedupKey(dedupKey)?.status === 'sent') return false;
     if (!this.sender.enabled) return false;
     const view = EvaluationService.toView(analysis);
     const validUrl = (() => {
@@ -213,6 +213,7 @@ export class NotificationService {
     ].join('\n');
     try {
       const sent = await this.sender.sendMessage(body, { disablePreview: true, projectUrl: validUrl });
+      if (resend) return true;
       const existing = this.findByDedupKey(dedupKey);
       if (existing) {
         this.db.update(notifications).set({ status: 'sent', telegramMessageId: sent.messageId, sentAt: nowIso(), lastError: null, updatedAt: nowIso() })
