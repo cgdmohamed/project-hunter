@@ -62,6 +62,7 @@ const rawSchema = z.object({
 
   SCAN_INTERVAL_MINUTES: z.coerce.number().int().min(1).max(1440).default(30),
   SCAN_ON_STARTUP: booleanish(false),
+  AUTO_SCAN_ENABLED: booleanish(false),
 
   MIN_PROJECT_BUDGET_USD: z.coerce.number().positive().default(100),
   MIN_PROJECT_SCORE: z.coerce.number().min(0).max(100).default(75),
@@ -110,6 +111,7 @@ export interface AppConfig {
   LOG_LEVEL: string;
   SCAN_INTERVAL_MINUTES: number;
   SCAN_ON_STARTUP: boolean;
+  AUTO_SCAN_ENABLED: boolean;
   MIN_PROJECT_BUDGET_USD: number;
   MIN_PROJECT_SCORE: number;
   MOSTAQL_BASE_URL: string;
