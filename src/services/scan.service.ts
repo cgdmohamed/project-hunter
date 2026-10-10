@@ -287,6 +287,18 @@ export class ScanService {
       maxUsd: project.budgetMaxUsd,
       convertible: true,
     };
+    // In RSS assistant mode the AI summarizes, but the user makes every decision.
+    // Do not hide opportunities due to unknown budgets or score thresholds.
+    if (this.config.RSS_FEED_URL) {
+      const outcome = await this.evaluation.analyze(project);
+      report.analyzed += 1;
+      this.repo.updateStatus(project.id, 'needs_review');
+      report.needsReview += 1;
+      const sent = await this.notification.sendProjectSuggestion(project, outcome.analysis);
+      if (sent) report.notified += 1;
+      return;
+    }
+
     const decision = evaluateBudget(budgetUsd, this.config.MIN_PROJECT_BUDGET_USD);
 
     if (decision === 'rejected') {
