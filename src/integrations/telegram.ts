@@ -91,7 +91,7 @@ export class TelegramClient {
   /**
    * Sends a single HTML message. Bounded retries for transient failures (429/5xx).
    */
-  async sendMessage(html: string, options: { disablePreview?: boolean } = {}): Promise<TelegramSendResult> {
+  async sendMessage(html: string, options: { disablePreview?: boolean; projectUrl?: string } = {}): Promise<TelegramSendResult> {
     const maxAttempts = 3;
     let lastError: Error | null = null;
 
@@ -121,7 +121,7 @@ export class TelegramClient {
     return { messageId: firstId };
   }
 
-  private async sendOnce(html: string, options: { disablePreview?: boolean }): Promise<TelegramSendResult> {
+  private async sendOnce(html: string, options: { disablePreview?: boolean; projectUrl?: string }): Promise<TelegramSendResult> {
     if (!this.enabled) {
       throw new TelegramError('Telegram is not configured (TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID)');
     }
@@ -139,6 +139,7 @@ export class TelegramClient {
             text: html,
             parse_mode: 'HTML',
             disable_web_page_preview: options.disablePreview ?? false,
+            ...(options.projectUrl ? { reply_markup: { inline_keyboard: [[{ text: 'فتح المشروع على مستقل', url: options.projectUrl }]] } } : {}),
           }),
         },
       );
