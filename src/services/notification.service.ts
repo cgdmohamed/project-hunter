@@ -205,7 +205,7 @@ export class NotificationService {
       `<b>ملخص:</b> ${escapeHtml(view.businessProblem || view.summary)}`,
       `<b>الملاءمة:</b> ${escapeHtml(view.suitabilityReasons[0] ?? view.technicalSuitability)}`,
       '<i>تنبيه مراجعة فقط؛ لم يتم توليد أو إرسال عرض تلقائي.</i>',
-    ].join('\\n');
+    ].join('\n');
     try {
       const sent = await this.sender.sendMessage(body, { disablePreview: true });
       const existing = this.findByDedupKey(dedupKey);
