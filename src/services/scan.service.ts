@@ -69,7 +69,7 @@ export class ScanService {
     if (!this.config.SCRAPER_ENABLED) {
       return this.skipped('scraper_disabled', startedAt);
     }
-    if (this.source instanceof Object && this.source.constructor.name !== 'RssAppSource' && this.health.isBlocked()) {
+    if (!this.config.RSS_FEED_URL && this.health.isBlocked()) {
       const state = this.health.getBlockState();
       this.logger.warn({ state }, 'scraper is blocked; scan skipped pending administrator reset');
       return this.skipped('scraper_blocked', startedAt);
