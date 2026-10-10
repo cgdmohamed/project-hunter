@@ -19,7 +19,7 @@ import type { NormalizationService } from './normalization.service.js';
 
 export interface MessageSender {
   readonly enabled: boolean;
-  sendMessage(html: string, options?: { disablePreview?: boolean }): Promise<TelegramSendResult>;
+  sendMessage(html: string, options?: { disablePreview?: boolean; projectUrl?: string }): Promise<TelegramSendResult>;
   sendMessages(messages: string[], options?: { disablePreview?: boolean }): Promise<TelegramSendResult>;
 }
 
