@@ -1,0 +1,42 @@
+{
+  "name": "ai-project-hunter",
+  "version": "1.0.0",
+  "description": "Automated opportunity discovery and qualification for the Mostaql freelance marketplace",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "node --env-file-if-exists=.env --import tsx src/index.ts",
+    "build": "tsc -p tsconfig.json && node scripts/copy-assets.mjs",
+    "start": "node dist/index.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "node --env-file-if-exists=.env --import tsx src/database/migrate.ts",
+    "compose:check": "docker compose config",
+    "docker:build": "docker build -t ai-project-hunter ."
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.2.0",
+    "cheerio": "^1.1.0",
+    "dotenv": "^16.5.0",
+    "drizzle-orm": "^0.44.2",
+    "fastify": "^5.4.0",
+    "node-cron": "^4.2.1",
+    "openai": "^5.5.0",
+    "pino": "^9.7.0",
+    "zod": "^3.25.61"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^22.15.30",
+    "drizzle-kit": "^0.31.4",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3",
+    "vitest": "^3.1.4"
+  }
+}

@@ -1,0 +1,56 @@
+# Coolify deployment: create the resource from this repository using the
+# "Docker Compose" build pack. Coolify injects the environment variables below.
+# The four `:?` variables are REQUIRED and will fail fast if they are missing.
+services:
+  project-hunter:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ai-project-hunter:latest
+    restart: unless-stopped
+    # No published ports: the service is reached only on the internal network.
+    # Add a Coolify domain (or a `ports:` mapping) if you need `/health` exposed.
+    expose:
+      - "3000"
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: "3000"
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DATA_DIR: /app/data
+      DATABASE_PATH: /app/data/project-hunter.sqlite
+
+      # --- Required secrets -------------------------------------------------
+      OPENAI_API_KEY: ${OPENAI_API_KEY:?OPENAI_API_KEY is required}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?TELEGRAM_BOT_TOKEN is required}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:?TELEGRAM_CHAT_ID is required}
+      ADMIN_API_KEY: ${ADMIN_API_KEY:?ADMIN_API_KEY is required}
+
+      # --- Optional tuning --------------------------------------------------
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      SCAN_INTERVAL_MINUTES: ${SCAN_INTERVAL_MINUTES:-30}
+      SCAN_ON_STARTUP: ${SCAN_ON_STARTUP:-false}
+      MIN_PROJECT_BUDGET_USD: ${MIN_PROJECT_BUDGET_USD:-100}
+      MIN_PROJECT_SCORE: ${MIN_PROJECT_SCORE:-75}
+      SCRAPER_ENABLED: ${SCRAPER_ENABLED:-true}
+      SCRAPER_MAX_LISTING_PAGES: ${SCRAPER_MAX_LISTING_PAGES:-1}
+      SCRAPER_DETAIL_REFRESH_HOURS: ${SCRAPER_DETAIL_REFRESH_HOURS:-24}
+      ALERT_DEDUP_MINUTES: ${ALERT_DEDUP_MINUTES:-60}
+    volumes:
+      - project-hunter-data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3000/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  project-hunter-data:
+    driver: local
