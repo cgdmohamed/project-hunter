@@ -275,8 +275,12 @@ export class ScanService {
       parsed,
     );
     const changed = project.contentHash !== normalized.contentHash;
-    const reprocess =
-      changed || project.status === 'discovered' || project.status === 'budget_rejected' || (project.status === 'needs_review' && !this.config.RSS_FEED_URL);
+    // RSS is a discovery-only source: analyze each newly discovered project once.
+    // Existing projects must not trigger another AI call just because RSS edits
+    // text, timestamps, or listing metadata. Pending projects remain queued.
+    const reprocess = this.config.RSS_FEED_URL
+      ? project.status === 'discovered'
+      : changed || project.status === 'discovered' || project.status === 'budget_rejected' || project.status === 'needs_review';
 
     this.repo.applyDetail(project.id, normalized, { markPendingAnalysis: reprocess });
   }
