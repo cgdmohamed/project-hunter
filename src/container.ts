@@ -7,6 +7,7 @@ import { HttpFetcher } from './integrations/http.js';
 import { OpenAiClient } from './integrations/openai.js';
 import { TelegramClient } from './integrations/telegram.js';
 import { MostaqlSource } from './sources/mostaql/mostaql.source.js';
+import { RssAppSource } from './sources/rss-app/rss-app.source.js';
 import type { ProjectSource } from './sources/project-source.interface.js';
 import { DiscoveryService } from './services/discovery.service.js';
 import { EvaluationService } from './services/evaluation.service.js';
@@ -63,7 +64,7 @@ export function buildContainer(config: AppConfig, overrides: ContainerOverrides 
   const db = createDrizzle(sqlite);
 
   const http = new HttpFetcher(config, metrics);
-  const source = overrides.source ?? new MostaqlSource(config, http);
+  const source = overrides.source ?? (config.RSS_FEED_URL ? new RssAppSource(config) : new MostaqlSource(config, http));
 
   const settings = new SystemSettingsService(db);
   const lock = new ScanLockService(settings);
