@@ -276,7 +276,7 @@ export class ScanService {
     );
     const changed = project.contentHash !== normalized.contentHash;
     const reprocess =
-      changed || project.status === 'discovered' || project.status === 'budget_rejected' || project.status === 'needs_review';
+      changed || project.status === 'discovered' || project.status === 'budget_rejected' || (project.status === 'needs_review' && !this.config.RSS_FEED_URL);
 
     this.repo.applyDetail(project.id, normalized, { markPendingAnalysis: reprocess });
   }
