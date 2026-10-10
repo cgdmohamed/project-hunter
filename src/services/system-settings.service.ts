@@ -60,6 +60,13 @@ export class SystemSettingsService {
   }
 
   /** Release only a lock still owned by this worker (avoids deleting a replacement lock). */
+  clearExpiredScanLock(now: number): boolean {
+    const rows = this.db.delete(systemSettings).where(
+      sql`${systemSettings.key} = ${SCAN_LOCK_KEY} AND json_valid(${systemSettings.value}) AND json_extract(${systemSettings.value}, '$.expiresAt') <= ${new Date(now).toISOString()}`,
+    ).returning({ key: systemSettings.key }).all();
+    return rows.length > 0;
+  }
+
   releaseScanLock(owner: string): void {
     this.db.delete(systemSettings).where(
       sql`${systemSettings.key} = ${SCAN_LOCK_KEY} AND json_valid(${systemSettings.value}) AND json_extract(${systemSettings.value}, '$.owner') = ${owner}`,
@@ -105,11 +112,6 @@ export class ScanLockService {
 
   /** Clears an expired lock left behind by a crash. Returns true if cleared. */
   recoverExpired(now = Date.now()): boolean {
-    const existing = this.readLock();
-    if (existing && this.isExpired(existing, now)) {
-      this.settings.delete(SCAN_LOCK_KEY);
-      return true;
-    }
-    return false;
+    return this.settings.clearExpiredScanLock(now);
   }
 }
