@@ -48,16 +48,21 @@ describe('http fetcher', () => {
     expect(attempts).toBe(3);
   });
 
-  it('retries 429 responses then succeeds', async () => {
+  it('halts immediately on HTTP 429 without retrying', async () => {
     let attempts = 0;
     stubFetch(() => {
       attempts += 1;
-      if (attempts === 1) return new Response('slow down', { status: 429 });
-      return new Response('<html>ok</html>', { status: 200 });
+      return new Response('slow down', { status: 429, headers: { 'Retry-After': '60' } });
     });
-    const result = await new HttpFetcher(config).fetchHtml('https://mostaql.com/projects');
-    expect(result.status).toBe(200);
-    expect(attempts).toBe(2);
+    const metrics = new Metrics();
+    const error = await new HttpFetcher(config, metrics)
+      .fetchHtml('https://mostaql.com/projects')
+      .catch((e) => e);
+    expect(error).toBeInstanceOf(BlockedAccessError);
+    expect((error as BlockedAccessError).reason).toBe('http429');
+    expect((error as BlockedAccessError).message).toContain('Retry-After: 60');
+    expect(attempts).toBe(1);
+    expect(metrics.mostaqlBlocked).toBe(1);
   });
 
   it('treats HTTP 403 as an explicit block and does not retry', async () => {
