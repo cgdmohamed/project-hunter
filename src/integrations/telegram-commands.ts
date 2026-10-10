@@ -78,14 +78,14 @@ export class TelegramCommandPoller {
             await this.sender.sendMessage('الأوامر: مشاريع /scan — فحص يدوي | الحالة /status — حالة النظام | مساعدة /help');
           } else if (command === 'status') {
             const lock = this.settings.get('scan_lock');
-            const blocked = this.settings.get('scraper_blocked');
+            const blocked = !this.config.RSS_FEED_URL && this.settings.get('scraper_blocked');
             await this.sender.sendMessage(`حالة النظام: ${blocked ? 'الجلب متوقف بسبب تقييد الوصول' : 'جاهز'}\nفحص جارٍ: ${lock ? 'نعم' : 'لا'}`);
           } else {
             if (this.scan.isRunning || this.settings.get('scan_lock')) {
               await this.sender.sendMessage('يوجد فحص قيد التنفيذ حاليًا. لن يتم تشغيل فحص مكرر.');
               continue;
             }
-            if (this.settings.get('scraper_blocked')) {
+            if (!this.config.RSS_FEED_URL && this.settings.get('scraper_blocked')) {
               await this.sender.sendMessage('تعذر بدء الفحص: جمع المشاريع متوقف بسبب رفض وصول سابق من مستقل (HTTP 403 أو تقييد مماثل). لن نعيد المحاولة حتى تتم مراجعة السماح بالوصول.');
               continue;
             }
