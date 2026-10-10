@@ -69,7 +69,7 @@ const rawSchema = z.object({
 
   MOSTAQL_BASE_URL: z.string().url().default('https://mostaql.com'),
   SCRAPER_ENABLED: booleanish(true),
-  RSS_FEED_URL: z.string().url().optional(),
+  RSS_FEED_URL: z.preprocess((value) => value === '' ? undefined : value, z.string().url().optional()),
   SCRAPER_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120000).default(20000),
   SCRAPER_REQUEST_DELAY_MS: z.coerce.number().int().min(0).max(60000).default(5000),
   SCRAPER_MAX_CONCURRENCY: z.coerce.number().int().min(1).max(5).default(1),
