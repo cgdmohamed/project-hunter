@@ -1,5 +1,5 @@
 import type { AppConfig } from '../../config/env.js';
-import type { HttpFetcher } from '../../integrations/http.js';
+import { BlockedAccessError, type HttpFetcher } from '../../integrations/http.js';
 import type { ListingParseResult } from '../../types/project.js';
 import type { DiscoveredProject, SourceAccessStatus, SourceScanContext, ProjectSource } from '../project-source.interface.js';
 import { parseListingPage } from './listing.parser.js';
@@ -7,6 +7,8 @@ import { parseProjectDetail } from './detail.parser.js';
 
 export class MostaqlSource implements ProjectSource {
   readonly name = 'mostaql';
+  private robotsCheckedAt = 0;
+  private robotsRawCache: string | null = null;
 
   constructor(
     private readonly config: AppConfig,
@@ -18,6 +20,7 @@ export class MostaqlSource implements ProjectSource {
   }
 
   async discoverProjects(context: SourceScanContext): Promise<ListingParseResult[]> {
+    await this.ensureRobotsPermission();
     const pages: ListingParseResult[] = [];
     for (let page = 1; page <= context.maxListingPages; page += 1) {
       const url = `${this.baseUrl}/projects${page === 1 ? '' : `?page=${page}`}`;
@@ -29,6 +32,10 @@ export class MostaqlSource implements ProjectSource {
   }
 
   async fetchProjectDetail(canonicalUrl: string): Promise<ReturnType<typeof parseProjectDetail>> {
+    await this.ensureRobotsPermission();
+    if (!robotsAllowProjects(this.robotsRawCache ?? '', new URL(canonicalUrl).pathname, this.config.MOSTAQL_USER_AGENT)) {
+      throw new BlockedAccessError('robots', null, 'robots.txt disallows this project detail path');
+    }
     const result = await this.http.fetchHtml(canonicalUrl);
     return parseProjectDetail(result.text, this.baseUrl, this.config.SELECTORS);
   }
@@ -69,6 +76,17 @@ export class MostaqlSource implements ProjectSource {
     };
   }
 
+  private async ensureRobotsPermission(): Promise<void> {
+    if (Date.now() - this.robotsCheckedAt < 3_600_000 && this.robotsRawCache !== null) return;
+    const raw = await this.fetchRobotsTxt();
+    if (raw === null) throw new BlockedAccessError('robots', null, 'Unable to verify robots.txt; scraping paused for manual review');
+    this.robotsRawCache = raw;
+    this.robotsCheckedAt = Date.now();
+    if (!robotsAllowProjects(raw, '/projects', this.config.MOSTAQL_USER_AGENT)) {
+      throw new BlockedAccessError('robots', null, 'robots.txt disallows automated project listings access');
+    }
+  }
+
   private async fetchRobotsTxt(): Promise<string | null> {
     try {
       // robots.txt is fetched without politeness delay to avoid skewing metrics.
@@ -90,42 +108,62 @@ export class MostaqlSource implements ProjectSource {
   }
 }
 
-export function robotsAllowProjects(raw: string): boolean {
-  const lines = raw.split(/\r?\n/);
-  let inUserAgentStar = false;
-  let sawRules = false;
-  let disallowsRoot = false;
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (trimmed === '' || trimmed.startsWith('#')) continue;
-    const [keyRaw, ...valueParts] = trimmed.split(':');
-    const key = keyRaw?.trim().toLowerCase();
-    const value = valueParts.join(':').trim();
-    if (!key) continue;
-    sawRules = true;
-
+/**
+ * RFC 9309-style group selection and longest-path rule precedence.
+ * Unknown rules are ignored; exact longest-match ties favor Allow.
+ */
+export function robotsAllowProjects(raw: string, path = '/projects', userAgent = 'ProjectHunterBot'): boolean {
+  type Group = { agents: string[]; rules: { allow: boolean; pattern: string }[] };
+  const groups: Group[] = [];
+  let agents: string[] = [];
+  let rules: Group['rules'] = [];
+  const flush = (): void => {
+    if (agents.length) groups.push({ agents, rules });
+    agents = [];
+    rules = [];
+  };
+  for (const line of raw.split(/\r?\n/)) {
+    const withoutComment = line.split('#')[0]!.trim();
+    if (!withoutComment) continue;
+    const colon = withoutComment.indexOf(':');
+    if (colon < 0) continue;
+    const key = withoutComment.slice(0, colon).trim().toLowerCase();
+    const value = withoutComment.slice(colon + 1).trim();
     if (key === 'user-agent') {
-      inUserAgentStar = value === '*' || value.toLowerCase().includes('bot');
-      continue;
+      if (rules.length) flush();
+      agents.push(value.toLowerCase());
+    } else if ((key === 'allow' || key === 'disallow') && agents.length) {
+      if (value !== '') rules.push({ allow: key === 'allow', pattern: value });
     }
-    if (!inUserAgentStar) continue;
+  }
+  flush();
 
-    if (key === 'disallow') {
-      if (value === '' || value === '/') {
-        disallowsRoot = true;
-      } else if (value.startsWith('/projects')) {
-        disallowsRoot = true;
-      }
-    } else if (key === 'allow') {
-      if (value.startsWith('/projects')) {
-        disallowsRoot = false;
+  const agent = userAgent.toLowerCase();
+  let specificity = -1;
+  for (const group of groups) {
+    for (const candidate of group.agents) {
+      if (candidate === '*' || agent.includes(candidate)) specificity = Math.max(specificity, candidate === '*' ? 0 : candidate.length);
+    }
+  }
+  if (specificity < 0) return true;
+  const selected = groups.filter(group => group.agents.some(candidate =>
+    specificity === 0 ? candidate === '*' : candidate !== '*' && candidate.length === specificity && agent.includes(candidate),
+  ));
+  let best = -1;
+  let permitted = true;
+  for (const group of selected) {
+    for (const rule of group.rules) {
+      const escaped = rule.pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\\\*/g, '.*');
+      const regex = new RegExp('^' + escaped.replace(/\\\$$/, '$'));
+      if (!regex.test(path)) continue;
+      const length = rule.pattern.replace(/[\*$]/g, '').length;
+      if (length > best || (length === best && rule.allow)) {
+        best = length;
+        permitted = rule.allow;
       }
     }
   }
-
-  if (!sawRules) return false;
-  return !disallowsRoot;
+  return permitted;
 }
 
 export type { DiscoveredProject };
