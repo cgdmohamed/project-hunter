@@ -31,6 +31,7 @@ export function buildTestConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     LOG_LEVEL: 'silent',
     SCAN_INTERVAL_MINUTES: 30,
     SCAN_ON_STARTUP: false,
+    AUTO_SCAN_ENABLED: false,
     MIN_PROJECT_BUDGET_USD: 100,
     MIN_PROJECT_SCORE: 75,
     MOSTAQL_BASE_URL: 'https://mostaql.com',
