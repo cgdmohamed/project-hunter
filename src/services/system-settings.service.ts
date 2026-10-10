@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import type { AppDb } from '../database/client.js';
 import { systemSettings } from '../database/schema.js';
 import { nowIso } from '../utils/date.js';
@@ -37,6 +37,35 @@ export class SystemSettingsService {
     this.set(key, JSON.stringify(value));
   }
 
+  /** Atomically claim an absent or expired lock using a conditional SQLite UPSERT. */
+  tryAcquireScanLock(owner: string, ttlMs: number): boolean {
+    const now = Date.now();
+    const value = JSON.stringify({
+      owner,
+      startedAt: new Date(now).toISOString(),
+      expiresAt: new Date(now + ttlMs).toISOString(),
+    });
+    const updatedAt = nowIso();
+    const acquired = this.db
+      .insert(systemSettings)
+      .values({ key: SCAN_LOCK_KEY, value, updatedAt })
+      .onConflictDoUpdate({
+        target: systemSettings.key,
+        set: { value, updatedAt },
+        setWhere: sql`json_valid(${systemSettings.value}) AND json_extract(${systemSettings.value}, '$.expiresAt') <= ${new Date(now).toISOString()}`,
+      })
+      .returning({ key: systemSettings.key })
+      .get();
+    return acquired !== undefined;
+  }
+
+  /** Release only a lock still owned by this worker (avoids deleting a replacement lock). */
+  releaseScanLock(owner: string): void {
+    this.db.delete(systemSettings).where(
+      sql`${systemSettings.key} = ${SCAN_LOCK_KEY} AND json_valid(${systemSettings.value}) AND json_extract(${systemSettings.value}, '$.owner') = ${owner}`,
+    ).run();
+  }
+
   delete(key: string): void {
     this.db.delete(systemSettings).where(eq(systemSettings.key, key)).run();
   }
@@ -61,25 +90,13 @@ export class ScanLockService {
     return new Date(lock.expiresAt).getTime() <= now;
   }
 
-  /** Attempts to acquire the scan lock. Prevents concurrent scans. */
+  /** SQLite conditional upsert is atomic across workers sharing this database. */
   acquire(owner: string, ttlMs: number): boolean {
-    const existing = this.readLock();
-    if (existing && !this.isExpired(existing)) {
-      return false;
-    }
-    const now = Date.now();
-    this.settings.setJson(SCAN_LOCK_KEY, {
-      owner,
-      startedAt: new Date(now).toISOString(),
-      expiresAt: new Date(now + ttlMs).toISOString(),
-    } satisfies ScanLock);
-    return true;
+    return this.settings.tryAcquireScanLock(owner, ttlMs);
   }
 
   release(owner: string): void {
-    const existing = this.readLock();
-    if (existing && existing.owner !== owner) return;
-    this.settings.delete(SCAN_LOCK_KEY);
+    this.settings.releaseScanLock(owner);
   }
 
   current(): ScanLock | null {
