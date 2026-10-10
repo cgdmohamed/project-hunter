@@ -190,6 +190,49 @@ export class NotificationService {
     return paginateBlocks(blocks);
   }
 
+  /** RSS discovery assistant: reports projects for human judgment, no score-based rejection. */
+  async sendProjectSuggestion(project: ProjectRow, analysis: AnalysisRow): Promise<boolean> {
+    const dedupKey = `suggestion:${project.id}:${analysis.contentHash ?? project.contentHash}`;
+    if (this.findByDedupKey(dedupKey)?.status === 'sent') return false;
+    if (!this.sender.enabled) return false;
+    const view = EvaluationService.toView(analysis);
+    const validUrl = (() => {
+      try {
+        const url = new URL(project.canonicalUrl);
+        return url.protocol === 'https:' && ['mostaql.com', 'www.mostaql.com'].includes(url.hostname) ? url.toString() : null;
+      } catch { return null; }
+    })();
+    if (!validUrl) throw new Error('Invalid Mostaql project URL');
+    const body = [
+      '<b>مشروع جديد — شوف إذا مناسب ليك</b>',
+      `<b>${escapeHtml(project.title ?? 'مشروع بدون عنوان')}</b>`,
+      `<b>ملخص:</b> ${escapeHtml((view.summary || project.description || '').slice(0, 550))}`,
+      `<b>سبب الاهتمام:</b> ${escapeHtml((view.suitabilityReasons[0] || view.technicalSuitability || 'راجع متطلبات المشروع').slice(0, 330))}`,
+      '<b>الميزانية:</b> غير متاحة في RSS — القرار ليك بعد فتح المشروع',
+      `<a href="${escapeHtml(validUrl)}">رابط المشروع</a>`,
+    ].join('\n');
+    try {
+      const sent = await this.sender.sendMessage(body, { disablePreview: true, projectUrl: validUrl });
+      const existing = this.findByDedupKey(dedupKey);
+      if (existing) {
+        this.db.update(notifications).set({ status: 'sent', telegramMessageId: sent.messageId, sentAt: nowIso(), lastError: null, updatedAt: nowIso() })
+          .where(eq(notifications.id, existing.id)).run();
+      } else {
+        this.insertNotification({ projectId: project.id, notificationType: 'alert', dedupKey, status: 'sent', telegramMessageId: sent.messageId, sentAt: nowIso() });
+      }
+      this.metrics.notificationsSent += 1;
+      return true;
+    } catch (error) {
+      const err = error instanceof Error ? error.message : String(error);
+      this.metrics.notificationFailures += 1;
+      this.logger.error({ projectId: project.id, error: err }, 'project suggestion delivery failed');
+      if (!this.findByDedupKey(dedupKey)) {
+        this.insertNotification({ projectId: project.id, notificationType: 'alert', dedupKey, status: 'failed', lastError: err });
+      }
+      return false;
+    }
+  }
+
   /** Review notification only: budget is unknown; never imply the $100 floor was met. */
   async sendBudgetReview(project: ProjectRow, analysis: AnalysisRow): Promise<boolean> {
     const dedupKey = `budget-review:${project.id}:${analysis.contentHash ?? project.contentHash}`;
