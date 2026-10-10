@@ -85,9 +85,24 @@ export class TelegramCommandPoller {
               await this.sender.sendMessage('يوجد فحص قيد التنفيذ حاليًا. لن يتم تشغيل فحص مكرر.');
               continue;
             }
+            if (this.settings.get('scraper_blocked')) {
+              await this.sender.sendMessage('تعذر بدء الفحص: جمع المشاريع متوقف بسبب رفض وصول سابق من مستقل (HTTP 403 أو تقييد مماثل). لن نعيد المحاولة حتى تتم مراجعة السماح بالوصول.');
+              continue;
+            }
             await this.sender.sendMessage('بدأ فحص المشاريع الجديدة على مستقل...');
             // Avoid blocking getUpdates while scan runs; lock in ScanService prevents overlap.
             void this.scan.trigger('manual').then(async report => {
+              if (report.status === 'skipped') {
+                const reason = report.skippedReason === 'scraper_blocked'
+                  ? 'تم تخطي الفحص: جمع المشاريع متوقف بسبب تقييد الوصول من مستقل.'
+                  : report.skippedReason === 'lock_held'
+                    ? 'تم تخطي الفحص: يوجد فحص آخر قيد التشغيل.'
+                    : report.skippedReason === 'scraper_disabled'
+                      ? 'تم تخطي الفحص: جمع المشاريع معطل من الإعدادات.'
+                      : `تم تخطي الفحص: ${report.skippedReason ?? 'سبب غير محدد'}`;
+                await this.sender.sendMessage(escapeHtml(reason));
+                return;
+              }
               const summary = [
                 'نتيجة فحص المشاريع',
                 `الحالة: ${report.status}`,
