@@ -3,6 +3,7 @@ import { loadConfig, ConfigError } from './config/env.js';
 import { buildContainer } from './container.js';
 import { runMigrations } from './database/client.js';
 import { ScanScheduler } from './jobs/scheduler.js';
+import { TelegramCommandPoller } from './integrations/telegram-commands.js';
 
 async function main(): Promise<void> {
   let config;
@@ -44,12 +45,16 @@ async function main(): Promise<void> {
     );
   }
 
+  const commands = new TelegramCommandPoller(config, container.settings, container.scan, container.telegram, logger);
+  commands.start();
+
   let shuttingDown = false;
   const shutdown = async (signal: string): Promise<void> => {
     if (shuttingDown) return;
     shuttingDown = true;
     logger.info({ signal }, 'shutting down gracefully');
     scheduler.stop();
+    await commands.stop();
     try {
       await app.close();
     } catch (error) {
