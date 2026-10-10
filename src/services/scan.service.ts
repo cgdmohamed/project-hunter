@@ -299,15 +299,18 @@ export class ScanService {
     const outcome = await this.evaluation.analyze(project);
     report.analyzed += 1;
 
+    // Reject technically unsuitable projects even if the RSS feed has no budget.
+    if (!outcome.qualified) {
+      this.repo.updateStatus(project.id, 'rejected');
+      return;
+    }
+
     if (decision === 'needs_review') {
       this.repo.updateStatus(project.id, 'needs_review');
       this.metrics.projectsNeedsReview += 1;
       report.needsReview += 1;
-      return;
-    }
-
-    if (!outcome.qualified) {
-      this.repo.updateStatus(project.id, 'rejected');
+      const notified = await this.notification.sendBudgetReview(project, outcome.analysis);
+      if (notified) report.notified += 1;
       return;
     }
 
