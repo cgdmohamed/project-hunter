@@ -61,6 +61,27 @@ export class ScanService {
   get isRunning(): boolean {
     return this.running;
   }
+  /** Re-send previously analyzed RSS suggestions from SQLite only (no RSS or AI calls). */
+  async resendSuggestions(limit = 10): Promise<{ sent: number; available: number; failed: number }> {
+    const max = Math.min(Math.max(Math.floor(limit), 1), 30);
+    const candidates = this.repo.list({ status: 'needs_review', limit: 200 })
+      .filter(project => Boolean(this.repo.latestAnalysis(project.id)));
+    const selected = candidates.slice(0, max);
+    let sent = 0;
+    let failed = 0;
+    for (const project of selected) {
+      const analysis = this.repo.latestAnalysis(project.id)!;
+      try {
+        if (await this.notification.sendProjectSuggestion(project, analysis, true)) sent += 1;
+        else failed += 1;
+      } catch (error) {
+        failed += 1;
+        this.logger.error({ projectId: project.id, error: String(error) }, 'resend suggestion failed');
+      }
+    }
+    return { sent, available: candidates.length, failed };
+  }
+
 
   async trigger(reason: ScanTrigger): Promise<ScanReport> {
     const startedAt = Date.now();
