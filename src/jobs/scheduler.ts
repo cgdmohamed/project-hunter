@@ -13,6 +13,10 @@ export class ScanScheduler {
   ) {}
 
   start(): void {
+    if (!this.config.AUTO_SCAN_ENABLED) {
+      this.logger.info('automatic scans disabled; manual scans remain available');
+      return;
+    }
     const minutes = this.config.SCAN_INTERVAL_MINUTES;
     const expression = `*/${minutes} * * * *`;
     if (!validate(expression)) {
