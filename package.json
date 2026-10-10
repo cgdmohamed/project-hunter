@@ -17,7 +17,7 @@
     "test:coverage": "vitest run --coverage",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "node --env-file-if-exists=.env --import tsx src/database/migrate.ts",
-    "compose:check": "docker compose config",
+    "compose:check": "docker compose -f docker-compose.yml config",
     "docker:build": "docker build -t ai-project-hunter ."
   },
   "dependencies": {
