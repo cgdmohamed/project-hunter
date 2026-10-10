@@ -19,7 +19,7 @@ describe('RSS opportunities without published budgets', () => {
     expect(first.needsReview).toBe(1);
     expect(first.notified).toBe(1);
     expect(handle.sentMessages).toHaveLength(1);
-    expect(handle.sentMessages[0]).toContain('الميزانية تحتاج مراجعة');
+    expect(handle.sentMessages[0]).toContain('شوف إذا مناسب ليك');
     const project = handle.container.repo.list()[0]!;
     expect(project.status).toBe('needs_review');
     expect(handle.container.repo.latestProposal(project.id)).toBeUndefined();
@@ -28,7 +28,7 @@ describe('RSS opportunities without published budgets', () => {
     expect(handle.sentMessages).toHaveLength(1);
   });
 
-  it('rejects low-fit unknown-budget projects without alerting', async () => {
+  it('sends low-fit projects for human review rather than rejecting', async () => {
     handle = buildTestContainer({
       config: { RSS_FEED_URL: 'https://rss.app/feeds/example.xml' },
       source: createFakeSource(
@@ -41,8 +41,8 @@ describe('RSS opportunities without published budgets', () => {
     });
     const report = await handle.container.scan.trigger('manual');
     expect(report.analyzed).toBe(1);
-    expect(report.notified).toBe(0);
-    expect(handle.sentMessages).toHaveLength(0);
-    expect(handle.container.repo.list()[0]?.status).toBe('rejected');
+    expect(report.notified).toBe(1);
+    expect(handle.sentMessages).toHaveLength(1);
+    expect(handle.container.repo.list()[0]?.status).toBe('needs_review');
   });
 });
